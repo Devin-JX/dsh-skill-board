@@ -1,5 +1,7 @@
 # dsh-skill-board
 
+English | [简体中文](README.zh.md)
+
 A **DeepSeek Harness (DSH)** plugin that adds a **Skills** page to Settings, so you can see every skill your agent can use and toggle each one on or off with a click.
 
 > 给 DSH（DeepSeek Harness）用的插件：在「设置 → 技能」里列出所有可开关的 Agent Skills，一行一个开关。
