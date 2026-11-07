@@ -95,6 +95,18 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const enableAll = async () => {
+        setBusy('*');
+        try {
+          await api('/skill-board/enable-all', {});
+          await load();
+        } catch (err) {
+          setState((s) => ({ ...s, error: String((err && err.message) || err) }));
+        } finally {
+          setBusy(null);
+        }
+      };
+
       const visible = state.skills.filter((s) => !s.readOnly);
       const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
       const matched = tokens.length === 0 ? visible : visible.filter((s) =>
@@ -123,6 +135,7 @@ window.__ModuleLoader__.load({
             visible.length + ' 个可开关，当前开 ' + on + ' 个' + (tokens.length ? '，命中 ' + matched.length + ' 个' : '')),
           h('div', { style: { flex: 1 } }),
           btn('刷新', load, { disabled: state.loading }),
+          btn('全部打开', enableAll, { disabled: busy === '*' || on === visible.length }),
           btn(confirming ? '确认全部关闭？' : '全部关闭', () => {
             if (confirming) disableAll(); else setConfirming(true);
           }, { disabled: busy === '*' || on === 0, danger: confirming }),

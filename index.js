@@ -27,6 +27,8 @@ const SOURCE_LABEL = {
 /** Skills shipped inside the app cannot be edited. */
 const isReadOnly = (s) => s.source === 'bundled' || (s.path ?? '').includes('app.asar')
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body)
   res.statusCode = status
@@ -116,15 +118,39 @@ export function apply(ctx) {
     const before = await readFile(skill.path, 'utf8')
     const after = setFrontmatter(before, 'disable-model-invocation', enabled ? 'false' : 'true')
     if (after !== before) await writeFile(skill.path, after, 'utf8')
+    if (after !== before) await waitForSkill(exec, name, enabled)
     return { ok: true, name, modelInvocable: enabled, changed: after !== before, path: skill.path }
+  }
+
+  /** The skill registry caches per cwd; wait until it observes our write. */
+  const waitForSkill = async (exec, name, enabled, timeoutMs = 2500) => {
+    const started = Date.now()
+    while (Date.now() - started < timeoutMs) {
+      const snap = await snapshot(exec)
+      const hit = snap.skills.find((s) => s.name === name)
+      if (hit && hit.invocation.modelInvocable === enabled) return true
+      await sleep(120)
+    }
+    return false
   }
 
   const disableAll = async (exec) => {
     const snap = await snapshot(exec)
-    const targets = snap.skills.filter((s) => s.invocation.modelInvocable && !isReadOnly(s))
+    const targets = snap.skills.filter((s) => !isReadOnly(s))
     let changed = 0
     for (const t of targets) {
       const result = await setEnabled(t.name, false, exec)
+      if (result.changed) changed += 1
+    }
+    return { ok: true, targets: targets.length, changed }
+  }
+
+  const enableAll = async (exec) => {
+    const snap = await snapshot(exec)
+    const targets = snap.skills.filter((s) => !isReadOnly(s))
+    let changed = 0
+    for (const t of targets) {
+      const result = await setEnabled(t.name, true, exec)
       if (result.changed) changed += 1
     }
     return { ok: true, targets: targets.length, changed }
@@ -175,6 +201,20 @@ export function apply(ctx) {
       handler: async (_req, res) => {
         try {
           sendJson(res, 200, await disableAll({ agent: liveScope() }))
+        } catch (error) {
+          sendJson(res, 500, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    }),
+  )
+
+  ctx.effect(() =>
+    ctx.webServer.register({
+      kind: 'exact',
+      path: '/skill-board/enable-all',
+      handler: async (_req, res) => {
+        try {
+          sendJson(res, 200, await enableAll({ agent: liveScope() }))
         } catch (error) {
           sendJson(res, 500, { ok: false, error: String(error?.message ?? error) })
         }
