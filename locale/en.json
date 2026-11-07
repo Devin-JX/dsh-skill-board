@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Skills Board",
+    "description": "A Skills page in Settings: list every discovered skill with its description, and toggle model invocation on or off."
+  }
+}

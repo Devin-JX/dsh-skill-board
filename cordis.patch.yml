@@ -1,0 +1,4 @@
+- insert:
+    - id: skill-board
+      name: '@devin-jx/dsh-skill-board'
+      config: {}
