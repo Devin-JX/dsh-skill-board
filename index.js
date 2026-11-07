@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 
 export const name = 'skill-board'
 export const inject = ['tools', 'skills', 'workingDirectory', 'webServer', 'agents']
@@ -23,6 +23,9 @@ const SOURCE_LABEL = {
   bundled: '内置',
   runtime: '运行时',
 }
+
+/** Skills shipped inside the app cannot be edited. */
+const isReadOnly = (s) => s.source === 'bundled' || (s.path ?? '').includes('app.asar')
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body)
@@ -75,23 +78,30 @@ export function apply(ctx) {
             (s.whenToUse ?? '').toLowerCase().includes(q),
         )
       : snap.skills
-    const isReadOnly = (s) => s.source === 'bundled' || (s.path ?? '').includes('app.asar')
-    return {
-      ok: true,
-      complete: snap.complete,
-      total: snap.skills.length,
-      skills: matched.map((s) => ({
-        name: s.name,
-        description: s.description,
-        source: s.source,
-        sourceLabel:
-          s.source === 'custom' && isReadOnly(s) ? '预设·只读' : (SOURCE_LABEL[s.source] ?? s.source),
-        readOnly: isReadOnly(s),
-        path: s.path ?? null,
-        modelInvocable: s.invocation.modelInvocable,
-        userInvocable: s.invocation.userInvocable,
-      })),
-    }
+    const skills = await Promise.all(
+      matched.map(async (s) => {
+        let mtime = null
+        if (s.path && !isReadOnly(s)) {
+          try {
+            mtime = (await stat(s.path)).mtime.toISOString()
+          } catch {}
+        }
+        return {
+          name: s.name,
+          description: s.description,
+          whenToUse: s.whenToUse ?? null,
+          source: s.source,
+          sourceLabel:
+            s.source === 'custom' && isReadOnly(s) ? '预设·只读' : (SOURCE_LABEL[s.source] ?? s.source),
+          readOnly: isReadOnly(s),
+          path: s.path ?? null,
+          mtime,
+          modelInvocable: s.invocation.modelInvocable,
+          userInvocable: s.invocation.userInvocable,
+        }
+      }),
+    )
+    return { ok: true, complete: snap.complete, total: snap.skills.length, skills }
   }
 
   const setEnabled = async (name, enabled, exec) => {
@@ -107,6 +117,17 @@ export function apply(ctx) {
     const after = setFrontmatter(before, 'disable-model-invocation', enabled ? 'false' : 'true')
     if (after !== before) await writeFile(skill.path, after, 'utf8')
     return { ok: true, name, modelInvocable: enabled, changed: after !== before, path: skill.path }
+  }
+
+  const disableAll = async (exec) => {
+    const snap = await snapshot(exec)
+    const targets = snap.skills.filter((s) => s.invocation.modelInvocable && !isReadOnly(s))
+    let changed = 0
+    for (const t of targets) {
+      const result = await setEnabled(t.name, false, exec)
+      if (result.changed) changed += 1
+    }
+    return { ok: true, targets: targets.length, changed }
   }
 
   const liveScope = () => {
@@ -140,6 +161,20 @@ export function apply(ctx) {
         try {
           const body = await readJson(req)
           sendJson(res, 200, await setEnabled(String(body.name ?? ''), Boolean(body.enabled), { agent: liveScope() }))
+        } catch (error) {
+          sendJson(res, 500, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    }),
+  )
+
+  ctx.effect(() =>
+    ctx.webServer.register({
+      kind: 'exact',
+      path: '/skill-board/disable-all',
+      handler: async (_req, res) => {
+        try {
+          sendJson(res, 200, await disableAll({ agent: liveScope() }))
         } catch (error) {
           sendJson(res, 500, { ok: false, error: String(error?.message ?? error) })
         }

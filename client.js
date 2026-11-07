@@ -17,6 +17,14 @@ window.__ModuleLoader__.load({
       return data;
     }
 
+    function fmtTime(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
     function Switch(props) {
       const on = props.on;
       return h('button', {
@@ -24,7 +32,8 @@ window.__ModuleLoader__.load({
         disabled: props.disabled,
         title: props.title,
         style: {
-          flex: '0 0 auto', width: 42, height: 24, borderRadius: 12, padding: 0, cursor: props.disabled ? 'default' : 'pointer',
+          flex: '0 0 auto', width: 42, height: 24, borderRadius: 12, padding: 0,
+          cursor: props.disabled ? 'default' : 'pointer',
           border: '1px solid rgba(127,127,127,0.35)',
           background: on ? '#3b82f6' : 'rgba(127,127,127,0.28)',
           position: 'relative', transition: 'background 120ms', opacity: props.disabled ? 0.5 : 1,
@@ -40,6 +49,8 @@ window.__ModuleLoader__.load({
     function SkillBoard() {
       const [state, setState] = React.useState({ loading: true, skills: [], total: 0, error: null });
       const [busy, setBusy] = React.useState(null);
+      const [query, setQuery] = React.useState('');
+      const [confirming, setConfirming] = React.useState(false);
 
       const load = React.useCallback(async () => {
         setState((s) => ({ ...s, loading: true }));
@@ -53,6 +64,12 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => { load(); }, [load]);
 
+      React.useEffect(() => {
+        if (!confirming) return;
+        const t = setTimeout(() => setConfirming(false), 4000);
+        return () => clearTimeout(t);
+      }, [confirming]);
+
       const toggle = async (skill) => {
         setBusy(skill.name);
         try {
@@ -65,50 +82,94 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const disableAll = async () => {
+        setBusy('*');
+        setConfirming(false);
+        try {
+          await api('/skill-board/disable-all', {});
+          await load();
+        } catch (err) {
+          setState((s) => ({ ...s, error: String((err && err.message) || err) }));
+        } finally {
+          setBusy(null);
+        }
+      };
+
       const visible = state.skills.filter((s) => !s.readOnly);
+      const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const matched = tokens.length === 0 ? visible : visible.filter((s) =>
+        tokens.every((t) =>
+          (s.name || '').toLowerCase().includes(t) ||
+          (s.description || '').toLowerCase().includes(t) ||
+          (s.whenToUse || '').toLowerCase().includes(t) ||
+          (s.sourceLabel || '').toLowerCase().includes(t)));
       const on = visible.filter((s) => s.modelInvocable).length;
+
+      const btn = (label, onClick, opts) => h('button', {
+        onClick, disabled: (opts && opts.disabled) || false,
+        style: {
+          fontSize: 12, padding: '5px 10px', borderRadius: 6, cursor: (opts && opts.disabled) ? 'default' : 'pointer',
+          background: (opts && opts.danger) ? '#c0392b' : 'transparent',
+          color: (opts && opts.danger) ? '#fff' : 'inherit',
+          border: '1px solid ' + ((opts && opts.danger) ? '#c0392b' : 'rgba(127,127,127,0.35)'),
+          opacity: (opts && opts.disabled) ? 0.5 : 1,
+        },
+      }, label);
 
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
           h('div', { style: { fontSize: 15, fontWeight: 600 } }, '技能'),
-          h('div', { style: { ...muted, fontSize: 12 } }, visible.length + ' 个技能，当前开 ' + on + ' 个'),
+          h('div', { style: { ...muted, fontSize: 12 } },
+            visible.length + ' 个可开关，当前开 ' + on + ' 个' + (tokens.length ? '，命中 ' + matched.length + ' 个' : '')),
           h('div', { style: { flex: 1 } }),
-          h('button', {
-            onClick: load, disabled: state.loading,
-            style: { fontSize: 12, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'inherit', border: '1px solid rgba(127,127,127,0.35)' },
-          }, state.loading ? '刷新中…' : '刷新'),
+          btn('刷新', load, { disabled: state.loading }),
+          btn(confirming ? '确认全部关闭？' : '全部关闭', () => {
+            if (confirming) disableAll(); else setConfirming(true);
+          }, { disabled: busy === '*' || on === 0, danger: confirming }),
         ),
+        h('input', {
+          value: query,
+          onChange: (e) => setQuery(e.target.value),
+          placeholder: '搜索：名字、说明、什么时候用……（空格分词，多个词同时满足）',
+          style: {
+            width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '7px 10px', borderRadius: 7,
+            background: 'transparent', color: 'inherit', border: '1px solid rgba(127,127,127,0.3)', outline: 'none',
+          },
+        }),
         state.error ? h('div', { style: { fontSize: 12, color: '#e5534b' } }, state.error) : null,
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-          visible.map((skill) =>
+          matched.map((skill) =>
             h('div', {
               key: skill.name,
               style: {
                 display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px',
                 border: '1px solid rgba(127,127,127,0.22)', borderRadius: 10,
-                opacity: skill.readOnly ? 0.62 : 1,
+                opacity: skill.modelInvocable ? 1 : 0.6,
               },
             },
               h('div', { style: { flex: 1, minWidth: 0 } },
                 h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' } },
                   h('span', { style: { fontWeight: 600, fontSize: 13.5 } }, skill.name),
                   h('span', { style: { ...muted, fontSize: 11, border: '1px solid rgba(127,127,127,0.3)', borderRadius: 5, padding: '0 5px' } }, skill.sourceLabel),
-                  skill.readOnly ? h('span', { style: { fontSize: 11, ...muted } }, '只读') : null,
+                  skill.mtime ? h('span', { style: { ...muted, fontSize: 11 } }, '改于 ' + fmtTime(skill.mtime)) : null,
                 ),
                 h('div', { style: { fontSize: 12.5, lineHeight: 1.55, marginTop: 3, ...muted } },
-                  (skill.description || '').slice(0, 180)),
+                  (skill.description || '').slice(0, 200)),
               ),
               h(Switch, {
                 on: skill.modelInvocable,
-                disabled: skill.readOnly || busy === skill.name,
-                title: skill.readOnly ? '随程序分发，改不了' : '改 SKILL.md 的 disable-model-invocation',
+                disabled: busy === skill.name || busy === '*',
+                title: '改 SKILL.md 的 disable-model-invocation',
                 onClick: () => toggle(skill),
               }),
             ),
           ),
         ),
+        matched.length === 0 && !state.loading
+          ? h('div', { style: { ...muted, fontSize: 12.5 } }, tokens.length ? '没有匹配的技能。' : '还没有安装可开关的技能。把 SKILL.md 放到 ~/.dsh/skills 就会出现在这里。')
+          : null,
         h('div', { style: { ...muted, fontSize: 11.5, lineHeight: 1.7 } },
-          '关闭后在对应 SKILL.md 写入 disable-model-invocation: true，对所有新会话生效。'),
+          '关闭后会在对应 SKILL.md 写入 disable-model-invocation: true，对所有新会话生效。'),
       );
     }
 

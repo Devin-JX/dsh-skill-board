@@ -30,6 +30,13 @@ This page turns that into a list: name, source, description, toggle.
 - **You want "off just for this session"** — this plugin cannot do that. It edits the file, so the change is permanent.
 - **You want to switch off a skill shipped inside the app** — those are read-only.
 
+## What the page gives you
+
+- **The description, right there** — you can tell what a skill does without opening `SKILL.md`. This is the biggest time saver: it is how you decide whether to keep a skill at all.
+- **A search box** — matches name, description, and "when to use" together. Space-separated words must all match. **If you cannot remember the name, search by what it does** (type "interview" and you will find a skill whose name never says that).
+- **Last modified time** — tells "I edited this recently" apart from "it has always been like this".
+- **Disable all** — the fastest bisect when you suspect one skill is misbehaving: turn everything off, then re-enable one at a time.
+- **One click per skill** — writes `disable-model-invocation` into the file.
 ## Install
 
 Requirements: DSH desktop build with the Settings UI (`@deepseek-ai/dsh-client-ui-settings`).
