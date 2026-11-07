@@ -8,13 +8,27 @@ A **DeepSeek Harness (DSH)** plugin that adds a **Skills** page to Settings, so 
 
 ## Why
 
-Agent Skills load lazily: only `name` + `description` sit in the context until a skill is actually relevant. The catch is that they are discovered from disk, so "what is installed, and how do I turn this one off?" ends up being a filesystem question.
+Once you have more than a handful of skills, three questions get hard to answer:
 
-This plugin answers it with a page:
+1. **Which skills can my agent actually see right now?**
+2. **Where did this one come from** — mine, this project, or shipped with the app?
+3. **A skill keeps firing when I do not want it — how do I shut it up?**
 
-- one row per skill: name, source badge, description, toggle
-- read-only skills (shipped inside the app) are hidden — they cannot be changed anyway
-- the toggle writes `disable-model-invocation` into the skill's `SKILL.md`
+In DSH all three are filesystem questions. Skills live in five roots (two user-level, two project-level, one bundled), and the switch is one line inside `SKILL.md`:
+
+```yaml
+disable-model-invocation: true
+```
+
+**Get the key wrong and nothing errors** — the skill just silently drops out of the catalog, and you end up blaming the model for ignoring it.
+
+This page turns that into a list: name, source, description, toggle.
+
+### When you do not need it
+
+- **Two or three skills, and you know where they are** — editing the file is faster.
+- **You want "off just for this session"** — this plugin cannot do that. It edits the file, so the change is permanent.
+- **You want to switch off a skill shipped inside the app** — those are read-only.
 
 ## Install
 
